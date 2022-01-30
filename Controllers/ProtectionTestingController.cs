@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace API_Protected_Endpoints.Controllers
 {
-    [Authorize]
+    [Authorize(Policy = "CertPolicy")]
     [Route("api/[controller]")]
     [ApiController]
     public class ProtectionTestingController : ControllerBase
@@ -16,12 +16,7 @@ namespace API_Protected_Endpoints.Controllers
         [HttpGet]
         public string Test()
         {
-            return "test";
+            return "test cert";
         }
-
-
-
-
-
     }
 }

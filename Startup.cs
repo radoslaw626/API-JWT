@@ -14,7 +14,9 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Transactions;
 using API_Protected_Endpoints.IdentityAuth;
+using Microsoft.AspNetCore.Authentication.Certificate;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -35,6 +37,7 @@ namespace API_Protected_Endpoints
         {
 
             services.AddControllers();
+            services.AddTransient<CertificateValidation>();
 
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
@@ -43,14 +46,8 @@ namespace API_Protected_Endpoints
                 .AddEntityFrameworkStores<ApplicationDbContext>()
                 .AddDefaultTokenProviders();
 
-            services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-                    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
-
-                })
-                .AddJwtBearer(options =>
+            services.AddAuthentication()
+                .AddJwtBearer("Token", options =>
                 {
                     options.SaveToken = true;
                     options.RequireHttpsMetadata = false;
@@ -64,6 +61,42 @@ namespace API_Protected_Endpoints
                         IssuerSigningKey =
                             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["JWT:SecretKey"]))
                     };
+                })
+                .AddCertificate("Certificate", options =>
+                {
+                    options.AllowedCertificateTypes = CertificateTypes.SelfSigned;
+                    options.Events = new CertificateAuthenticationEvents
+                    {
+                        OnCertificateValidated = context => {
+                            var validationService = context.HttpContext.RequestServices.GetService<CertificateValidation>();
+                            if (validationService.ValidateCertificate(context.ClientCertificate))
+                            {
+                                context.Success();
+                            }
+                            else
+                            {
+                                context.Fail("Invalid certificate");
+                            }
+                            return Task.CompletedTask;
+                        },
+                        OnAuthenticationFailed = context => {
+                            context.Fail("Invalid certificate");
+                            return Task.CompletedTask;
+                        }
+                    };
+                });
+
+            services
+                .AddAuthorization(options =>
+                {
+                    options.AddPolicy("TokenPolicy", new AuthorizationPolicyBuilder()
+                        .RequireAuthenticatedUser()
+                        .AddAuthenticationSchemes("Token")
+                        .Build());
+                    options.AddPolicy("CertPolicy", new AuthorizationPolicyBuilder()
+                        .RequireAuthenticatedUser()
+                        .AddAuthenticationSchemes("Certificate")
+                        .Build());
                 });
 
 
